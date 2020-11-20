@@ -13,12 +13,11 @@
 
 @property (nonatomic, assign) BOOL isFirstAppear;
 @property (nonatomic, assign) NSInteger columnNumber;
+@property (nonatomic, strong) TZAlbumModel *model;
 ///是否需要30M控制  yes 需要  no  不需要
 @property (nonatomic, assign) BOOL  isNeedSizeControl;
 
 @property (nonatomic, assign) float  videoMaxDuration;
-
-@property (nonatomic, strong) TZAlbumModel *model;
 @end
 
 

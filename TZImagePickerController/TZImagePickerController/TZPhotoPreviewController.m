@@ -15,6 +15,7 @@
 #import "TZImageCropManager.h"
 #import <SVProgressHUD/SVProgressHUD.h>
 
+
 @interface TZPhotoPreviewController ()<UICollectionViewDataSource,UICollectionViewDelegate,UIScrollViewDelegate> {
     UICollectionView *_collectionView;
     UICollectionViewFlowLayout *_layout;
@@ -43,6 +44,7 @@
 
 @property (nonatomic, assign) double progress;
 @property (strong, nonatomic) UIAlertController *alertView;
+@property (nonatomic, strong) UIView *iCloudErrorView;
 @end
 
 @implementation TZPhotoPreviewController
@@ -207,6 +209,11 @@
     [_collectionView registerClass:[TZPhotoPreviewCell class] forCellWithReuseIdentifier:@"TZPhotoPreviewCell"];
     [_collectionView registerClass:[TZVideoPreviewCell class] forCellWithReuseIdentifier:@"TZVideoPreviewCell"];
     [_collectionView registerClass:[TZGifPreviewCell class] forCellWithReuseIdentifier:@"TZGifPreviewCell"];
+    
+    TZImagePickerController *_tzImagePickerVc = (TZImagePickerController *)self.navigationController;
+    if (_tzImagePickerVc.scaleAspectFillCrop && _tzImagePickerVc.allowCrop) {
+        _collectionView.scrollEnabled = NO;
+    }
 }
 
 - (void)configCropView {
@@ -270,7 +277,7 @@
         [_collectionView reloadData];
     }
     
-    CGFloat toolBarHeight = [TZCommonTools tz_isIPhoneX] ? 44 + (83 - 49) : 44;
+    CGFloat toolBarHeight = 44 + [TZCommonTools tz_safeAreaInsets].bottom;
     CGFloat toolBarTop = self.view.tz_height - toolBarHeight;
     _toolBar.frame = CGRectMake(0, toolBarTop, self.view.tz_width, toolBarHeight);
     if (_tzImagePickerVc.allowPickingOriginalPhoto) {
@@ -305,7 +312,12 @@
         // 1. select:check if over the maxImagesCount / 选择照片,检查是否超过了最大个数的限制
         if (_tzImagePickerVc.selectedModels.count >= _tzImagePickerVc.maxImagesCount) {
             NSString *title = [NSString stringWithFormat:[NSBundle tz_localizedStringForKey:@"Select a maximum of %zd photos"], _tzImagePickerVc.maxImagesCount];
-            [_tzImagePickerVc showAlertWithTitle:title];
+            if (!_tzImagePickerVc.allowPickingImage && _tzImagePickerVc.allowPickingVideo ){
+                [_tzImagePickerVc showAlertWithTitle:@"你最多只能选择1个视频"];
+
+            }else {
+                [_tzImagePickerVc showAlertWithTitle:title];
+            }
             return;
             // 2. if not over the maxImagesCount / 如果没有超过最大个数限制
         } else {
@@ -401,104 +413,36 @@
 
 - (void)doneButtonClick {
     TZImagePickerController *_tzImagePickerVc = (TZImagePickerController *)self.navigationController;
-    //    [SVProgressHUD show];
-    //     如果图片正在从iCloud同步中,提醒用户
+    // 如果图片正在从iCloud同步中,提醒用户
     if (_progress > 0 && _progress < 1 && (_selectButton.isSelected || !_tzImagePickerVc.selectedModels.count )) {
         _alertView = [_tzImagePickerVc showAlertWithTitle:[NSBundle tz_localizedStringForKey:@"Synchronizing photos from iCloud"]];
         return;
     }
     
     // 如果没有选中过照片 点击确定时选中当前预览的照片
-    if (_tzImagePickerVc.selectedModels.count == 0 && _tzImagePickerVc.minImagesCount <= 0) {
-        
-        //根据需求 移除默认选中当前预览照片功能
-        
+    if (_tzImagePickerVc.selectedModels.count == 0 && _tzImagePickerVc.minImagesCount <= 0 && _tzImagePickerVc.autoSelectCurrentWhenDone) {
         [self select:_selectButton];
-
-        TZAssetModel *model = _models[self.currentIndex];
-        if (model.type == TZAssetModelMediaTypeVideo) {
-
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                                                                      NSIndexPath *indexPath = [NSIndexPath indexPathForItem:self.currentIndex inSection:0];
-                                                                      TZPhotoPreviewCell *cell = (TZPhotoPreviewCell *)[self->_collectionView cellForItemAtIndexPath:indexPath];
-                                                                      if (_tzImagePickerVc.allowCrop && [cell isKindOfClass:[TZPhotoPreviewCell class]]) { // 裁剪状态
-                                                                          self->_doneButton.enabled = NO;
-                                                                          [_tzImagePickerVc showProgressHUD];
-                                                                          UIImage *cropedImage = [TZImageCropManager cropImageView:cell.previewView.imageView toRect:_tzImagePickerVc.cropRect zoomScale:cell.previewView.scrollView.zoomScale containerView:self.view];
-                                                                          if (_tzImagePickerVc.needCircleCrop) {
-                                                                              cropedImage = [TZImageCropManager circularClipImage:cropedImage];
-                                                                          }
-                                                                          self->_doneButton.enabled = YES;
-                                                                          [_tzImagePickerVc hideProgressHUD];
-                                                                          if (self.doneButtonClickBlockCropMode) {
-                                                                              TZAssetModel *model = self->_models[self.currentIndex];
-                                                                              self.doneButtonClickBlockCropMode(cropedImage,model.asset);
-                                                                          }
-                                                                      } else if (self.doneButtonClickBlock) { // 非裁剪状态
-                                                                          self.doneButtonClickBlock(self->_isSelectOriginalPhoto);
-                                                                      }
-                                                                      if (self.doneButtonClickBlockWithPreviewType) {
-                                                                          self.doneButtonClickBlockWithPreviewType(self.photos,_tzImagePickerVc.selectedAssets,self.isSelectOriginalPhoto);
-                                                                      }
-                                           });
-            
-        }else {
-            PHImageManager * imageManager = [PHImageManager defaultManager];
-            [imageManager requestImageDataForAsset:model.asset options:nil resultHandler:^(NSData * _Nullable imageData, NSString * _Nullable dataUTI, UIImageOrientation orientation, NSDictionary * _Nullable info) {
-                NSInteger length = imageData.length;   // 图片大小，单位B
-                if (length / (1024.0*1024.0) > 30.0) { //大于30M
-                    [SVProgressHUD showInfoWithStatus:@"不可选择大于30M的图片"];
-                    return;
-                }else{
-                    NSIndexPath *indexPath = [NSIndexPath indexPathForItem:self.currentIndex inSection:0];
-                    TZPhotoPreviewCell *cell = (TZPhotoPreviewCell *)[self->_collectionView cellForItemAtIndexPath:indexPath];
-                    if (_tzImagePickerVc.allowCrop && [cell isKindOfClass:[TZPhotoPreviewCell class]]) { // 裁剪状态
-                        self->_doneButton.enabled = NO;
-                        [_tzImagePickerVc showProgressHUD];
-                        UIImage *cropedImage = [TZImageCropManager cropImageView:cell.previewView.imageView toRect:_tzImagePickerVc.cropRect zoomScale:cell.previewView.scrollView.zoomScale containerView:self.view];
-                        if (_tzImagePickerVc.needCircleCrop) {
-                            cropedImage = [TZImageCropManager circularClipImage:cropedImage];
-                        }
-                        self->_doneButton.enabled = YES;
-                        [_tzImagePickerVc hideProgressHUD];
-                        if (self.doneButtonClickBlockCropMode) {
-                            TZAssetModel *model = self->_models[self.currentIndex];
-                            self.doneButtonClickBlockCropMode(cropedImage,model.asset);
-                        }
-                    } else if (self.doneButtonClickBlock) { // 非裁剪状态
-                        self.doneButtonClickBlock(self->_isSelectOriginalPhoto);
-                    }
-                    if (self.doneButtonClickBlockWithPreviewType) {
-                        self.doneButtonClickBlockWithPreviewType(self.photos,_tzImagePickerVc.selectedAssets,self.isSelectOriginalPhoto);
-                    }
-                }
-            }];
+    }
+    NSIndexPath *indexPath = [NSIndexPath indexPathForItem:self.currentIndex inSection:0];
+    TZPhotoPreviewCell *cell = (TZPhotoPreviewCell *)[_collectionView cellForItemAtIndexPath:indexPath];
+    if (_tzImagePickerVc.allowCrop && [cell isKindOfClass:[TZPhotoPreviewCell class]]) { // 裁剪状态
+        _doneButton.enabled = NO;
+        [_tzImagePickerVc showProgressHUD];
+        UIImage *cropedImage = [TZImageCropManager cropImageView:cell.previewView.imageView toRect:_tzImagePickerVc.cropRect zoomScale:cell.previewView.scrollView.zoomScale containerView:self.view];
+        if (_tzImagePickerVc.needCircleCrop) {
+            cropedImage = [TZImageCropManager circularClipImage:cropedImage];
         }
-       
-    }else {
-        
-        NSIndexPath *indexPath = [NSIndexPath indexPathForItem:self.currentIndex inSection:0];
-           TZPhotoPreviewCell *cell = (TZPhotoPreviewCell *)[_collectionView cellForItemAtIndexPath:indexPath];
-           if (_tzImagePickerVc.allowCrop && [cell isKindOfClass:[TZPhotoPreviewCell class]]) { // 裁剪状态
-               _doneButton.enabled = NO;
-               [_tzImagePickerVc showProgressHUD];
-               UIImage *cropedImage = [TZImageCropManager cropImageView:cell.previewView.imageView toRect:_tzImagePickerVc.cropRect zoomScale:cell.previewView.scrollView.zoomScale containerView:self.view];
-               if (_tzImagePickerVc.needCircleCrop) {
-                   cropedImage = [TZImageCropManager circularClipImage:cropedImage];
-               }
-               _doneButton.enabled = YES;
-               [_tzImagePickerVc hideProgressHUD];
-               if (self.doneButtonClickBlockCropMode) {
-                   TZAssetModel *model = _models[self.currentIndex];
-                   self.doneButtonClickBlockCropMode(cropedImage,model.asset);
-               }
-           } else if (self.doneButtonClickBlock) { // 非裁剪状态
-               self.doneButtonClickBlock(_isSelectOriginalPhoto);
-           }
-           if (self.doneButtonClickBlockWithPreviewType) {
-               self.doneButtonClickBlockWithPreviewType(self.photos,_tzImagePickerVc.selectedAssets,self.isSelectOriginalPhoto);
-           }
-        
+        _doneButton.enabled = YES;
+        [_tzImagePickerVc hideProgressHUD];
+        if (self.doneButtonClickBlockCropMode) {
+            TZAssetModel *model = _models[self.currentIndex];
+            self.doneButtonClickBlockCropMode(cropedImage,model.asset);
+        }
+    } else if (self.doneButtonClickBlock) { // 非裁剪状态
+        self.doneButtonClickBlock(_isSelectOriginalPhoto);
+    }
+    if (self.doneButtonClickBlockWithPreviewType) {
+        self.doneButtonClickBlockWithPreviewType(self.photos,_tzImagePickerVc.selectedAssets,self.isSelectOriginalPhoto);
     }
 }
 
@@ -535,7 +479,6 @@
         _currentIndex = currentIndex;
         [self refreshNaviBarAndBottomBarState];
     }
-    
     [[NSNotificationCenter defaultCenter] postNotificationName:@"photoPreviewCollectionViewDidScroll" object:nil];
 }
 
@@ -553,32 +496,48 @@
     __weak typeof(self) weakSelf = self;
     if (_tzImagePickerVc.allowPickingMultipleVideo && model.type == TZAssetModelMediaTypeVideo) {
         cell = [collectionView dequeueReusableCellWithReuseIdentifier:@"TZVideoPreviewCell" forIndexPath:indexPath];
+        TZVideoPreviewCell *currentCell = (TZVideoPreviewCell *)cell;
+        currentCell.iCloudSyncFailedHandle = ^(id asset, BOOL isSyncFailed) {
+            model.iCloudFailed = isSyncFailed;
+            [weakSelf didICloudSyncStatusChanged:model];
+            [weakSelf.models replaceObjectAtIndex:indexPath.item withObject:model];
+        };
     } else if (_tzImagePickerVc.allowPickingMultipleVideo && model.type == TZAssetModelMediaTypePhotoGif && _tzImagePickerVc.allowPickingGif) {
         cell = [collectionView dequeueReusableCellWithReuseIdentifier:@"TZGifPreviewCell" forIndexPath:indexPath];
+        TZGifPreviewCell *currentCell = (TZGifPreviewCell *)cell;
+        currentCell.previewView.iCloudSyncFailedHandle = ^(id asset, BOOL isSyncFailed) {
+            model.iCloudFailed = isSyncFailed;
+            [weakSelf didICloudSyncStatusChanged:model];
+            [weakSelf.models replaceObjectAtIndex:indexPath.item withObject:model];
+        };
     } else {
         cell = [collectionView dequeueReusableCellWithReuseIdentifier:@"TZPhotoPreviewCell" forIndexPath:indexPath];
         TZPhotoPreviewCell *photoPreviewCell = (TZPhotoPreviewCell *)cell;
         photoPreviewCell.cropRect = _tzImagePickerVc.cropRect;
         photoPreviewCell.allowCrop = _tzImagePickerVc.allowCrop;
         photoPreviewCell.scaleAspectFillCrop = _tzImagePickerVc.scaleAspectFillCrop;
-        __weak typeof(_tzImagePickerVc) weakTzImagePickerVc = _tzImagePickerVc;
         __weak typeof(_collectionView) weakCollectionView = _collectionView;
         __weak typeof(photoPreviewCell) weakCell = photoPreviewCell;
         [photoPreviewCell setImageProgressUpdateBlock:^(double progress) {
             __strong typeof(weakSelf) strongSelf = weakSelf;
-            __strong typeof(weakTzImagePickerVc) strongTzImagePickerVc = weakTzImagePickerVc;
             __strong typeof(weakCollectionView) strongCollectionView = weakCollectionView;
             __strong typeof(weakCell) strongCell = weakCell;
             strongSelf.progress = progress;
             if (progress >= 1) {
                 if (strongSelf.isSelectOriginalPhoto) [strongSelf showPhotoBytes];
                 if (strongSelf.alertView && [strongCollectionView.visibleCells containsObject:strongCell]) {
-                    [strongTzImagePickerVc hideAlertView:strongSelf.alertView];
-                    strongSelf.alertView = nil;
-                    [strongSelf doneButtonClick];
+                    [strongSelf.alertView dismissViewControllerAnimated:YES completion:^{
+                        strongSelf.alertView = nil;
+                        [strongSelf doneButtonClick];
+                    }];
                 }
             }
         }];
+        photoPreviewCell.previewView.iCloudSyncFailedHandle = ^(id asset, BOOL isSyncFailed) {
+            model.iCloudFailed = isSyncFailed;
+            [weakSelf didICloudSyncStatusChanged:model];
+            [weakSelf.models replaceObjectAtIndex:indexPath.item withObject:model];
+        };
     }
     
     cell.model = model;
@@ -586,6 +545,7 @@
         __strong typeof(weakSelf) strongSelf = weakSelf;
         [strongSelf didTapPreviewCell];
     }];
+
     return cell;
 }
 
@@ -656,7 +616,8 @@
         _originalPhotoLabel.hidden = YES;
         _doneButton.hidden = YES;
     }
-    
+    // iCloud同步失败的UI刷新
+    [self didICloudSyncStatusChanged:model];
     if (_tzImagePickerVc.photoPreviewPageDidRefreshStateBlock) {
         _tzImagePickerVc.photoPreviewPageDidRefreshStateBlock(_collectionView, _naviBar, _backButton, _selectButton, _indexLabel, _toolBar, _originalPhotoButton, _originalPhotoLabel, _doneButton, _numberImageView, _numberLabel);
     }
@@ -669,6 +630,25 @@
         } else {
             self->_selectButton.imageView.contentMode = UIViewContentModeScaleAspectFit;
         }
+    });
+}
+
+- (void)didICloudSyncStatusChanged:(TZAssetModel *)model{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        TZImagePickerController *_tzImagePickerVc = (TZImagePickerController *)self.navigationController;
+        // onlyReturnAsset为NO时,依赖TZ返回大图,所以需要有iCloud同步失败的提示,并且不能选择,
+        if (_tzImagePickerVc.onlyReturnAsset) {
+            return;
+        }
+        TZAssetModel *currentModel = self.models[self.currentIndex];
+        if (_tzImagePickerVc.selectedModels.count <= 0) {
+            self->_doneButton.enabled = !currentModel.iCloudFailed;
+        } else {
+            self->_doneButton.enabled = YES;
+        }
+        self->_selectButton.hidden = currentModel.iCloudFailed || !_tzImagePickerVc.showSelectBtn;
+        self->_originalPhotoButton.hidden = currentModel.iCloudFailed;
+        self->_originalPhotoLabel.hidden = currentModel.iCloudFailed;
     });
 }
 

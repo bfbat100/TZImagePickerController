@@ -13,6 +13,7 @@
 #import "TZImagePickerController.h"
 #import "TZProgressView.h"
 #import <SVProgressHUD/SVProgressHUD.h>
+
 @interface TZAssetCell ()
 @property (weak, nonatomic) UIImageView *imageView;       // The photo / 照片
 @property (weak, nonatomic) UIImageView *selectImageView;
@@ -24,8 +25,6 @@
 @property (nonatomic, weak) UIImageView *videoImgView;
 @property (nonatomic, strong) TZProgressView *progressView;
 @property (nonatomic, assign) int32_t bigImageRequestID;
-
-
 @end
 
 @implementation TZAssetCell
@@ -36,15 +35,6 @@
     return self;
 }
 
-//- (void)setIsShowModalView:(BOOL)isShowModalView {
-//    _isShowModalView = isShowModalView;
-//    if (isShowModalView) {
-//        self.modalView.hidden = YES;
-//    }else {
-//        self.modalView.hidden = NO;
-//    }
-//}
-
 - (void)setModel:(TZAssetModel *)model {
     _model = model;
     self.representedAssetIdentifier = model.asset.localIdentifier;
@@ -52,6 +42,7 @@
         // Set the cell's thumbnail image if it's still showing the same asset.
         if ([self.representedAssetIdentifier isEqualToString:model.asset.localIdentifier]) {
             self.imageView.image = photo;
+            [self setNeedsLayout];
         } else {
             // NSLog(@"this cell is showing other asset");
             [[PHImageManager defaultManager] cancelImageRequest:self.imageRequestID];
@@ -70,7 +61,6 @@
     self.selectImageView.image = self.selectPhotoButton.isSelected ? self.photoSelImage : self.photoDefImage;
     self.indexLabel.hidden = !self.selectPhotoButton.isSelected;
     
-    
     self.type = (NSInteger)model.type;
     // 让宽度/高度小于 最小可选照片尺寸 的图片不能选中
     if (![[TZImageManager manager] isPhotoSelectableWithAsset:model.asset]) {
@@ -79,26 +69,17 @@
             _selectImageView.hidden = YES;
         }
     }
-
     // 如果用户选中了该图片，提前获取一下大图
     if (model.isSelected) {
         [self requestBigImage];
     } else {
         [self cancelBigImageRequest];
     }
-    
-//    if (model.isBiggerThirty) {
-//        self.modalView.hidden = NO;
-//    }else {
-//        self.modalView.hidden = YES;
-//    }
-    
     [self setNeedsLayout];
     
     if (self.assetCellDidSetModelBlock) {
         self.assetCellDidSetModelBlock(self, _imageView, _selectImageView, _indexLabel, _bottomView, _timeLength, _videoImgView);
     }
-
 }
 
 - (void)setIndex:(NSInteger)index {
@@ -205,6 +186,12 @@
     }
     
     _bigImageRequestID = [[TZImageManager manager] requestImageDataForAsset:_model.asset completion:^(NSData *imageData, NSString *dataUTI, UIImageOrientation orientation, NSDictionary *info) {
+        BOOL iCloudSyncFailed = !imageData && [TZCommonTools isICloudSyncError:info[PHImageErrorKey]];
+        self.model.iCloudFailed = iCloudSyncFailed;
+        if (iCloudSyncFailed && self.didSelectPhotoBlock) {
+            self.didSelectPhotoBlock(YES);
+            self.selectImageView.image = self.photoDefImage;
+        }
         [self hideProgressView];
     } progressHandler:^(double progress, NSError *error, BOOL *stop, NSDictionary *info) {
         if (self.model.isSelected) {
@@ -222,6 +209,18 @@
             [self cancelBigImageRequest];
         }
     }];
+    if (_model.type == TZAssetCellTypeVideo) {
+        [[TZImageManager manager] getVideoWithAsset:_model.asset completion:^(AVPlayerItem *playerItem, NSDictionary *info) {
+            BOOL iCloudSyncFailed = !playerItem && [TZCommonTools isICloudSyncError:info[PHImageErrorKey]];
+            self.model.iCloudFailed = iCloudSyncFailed;
+            if (iCloudSyncFailed && self.didSelectPhotoBlock) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    self.didSelectPhotoBlock(YES);
+                    self.selectImageView.image = self.photoDefImage;
+                });
+            }
+        }];
+    }
 }
 
 - (void)cancelBigImageRequest {
@@ -235,6 +234,21 @@
 
 - (void)reload:(NSNotification *)noti {
     TZImagePickerController *tzImagePickerVc = (TZImagePickerController *)noti.object;
+    
+    UIViewController *parentViewController = nil;
+    UIResponder *responder = self.nextResponder;
+    do {
+        if ([responder isKindOfClass:[UIViewController class]]) {
+            parentViewController = (UIViewController *)responder;
+            break;
+        }
+        responder = responder.nextResponder;
+    } while (responder);
+    
+    if (parentViewController.navigationController != tzImagePickerVc) {
+        return;
+    }
+    
     if (self.model.isSelected && tzImagePickerVc.showSelectedIndex) {
         self.index = [tzImagePickerVc.selectedAssetIds indexOfObject:self.model.asset.localIdentifier] + 1;
     }
@@ -248,17 +262,6 @@
 }
 
 #pragma mark - Lazy load
-
-- (UIView *)modalView {
-    if (_modalView == nil) {
-        UIView *modalView = [[UIView alloc]init];
-        modalView.backgroundColor = [UIColor grayColor];
-        modalView.alpha = 0.7;
-        [self.contentView addSubview:modalView];
-        _modalView = modalView;
-    }
-    return _modalView;
-}
 
 - (UIButton *)selectPhotoButton {
     if (_selectPhotoButton == nil) {
@@ -280,6 +283,7 @@
         
         _tapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(didTapImageView)];
         [_imageView addGestureRecognizer:_tapGesture];
+        self.allowPreview = self.allowPreview;
     }
     return _imageView;
 }
@@ -299,6 +303,7 @@
     if (_bottomView == nil) {
         UIView *bottomView = [[UIView alloc] init];
         static NSInteger rgb = 0;
+        bottomView.userInteractionEnabled = NO;
         bottomView.backgroundColor = [UIColor colorWithRed:rgb green:rgb blue:rgb alpha:0.8];
         [self.contentView addSubview:bottomView];
         _bottomView = bottomView;
@@ -374,8 +379,8 @@
         _selectImageView.contentMode = UIViewContentModeScaleAspectFit;
     }
     _indexLabel.frame = _selectImageView.frame;
-    _imageView.frame = CGRectMake(0, 0, self.tz_width, self.tz_height);
-    
+    _imageView.frame = self.bounds;
+
     static CGFloat progressWH = 20;
     CGFloat progressXY = (self.tz_width - progressWH) / 2;
     _progressView.frame = CGRectMake(progressXY, progressXY, progressWH, progressWH);
@@ -383,11 +388,6 @@
     _bottomView.frame = CGRectMake(0, self.tz_height - 17, self.tz_width, 17);
     _videoImgView.frame = CGRectMake(8, 0, 17, 17);
     _timeLength.frame = CGRectMake(self.videoImgView.tz_right, 0, self.tz_width - self.videoImgView.tz_right - 5, 17);
-    
-    
-    // 30M 遮盖View
-    
-    _modalView.frame =  CGRectMake(0, 0, self.tz_width, self.tz_height);
     
     self.type = (NSInteger)self.model.type;
     self.showSelectBtn = self.showSelectBtn;
@@ -397,9 +397,7 @@
     [self.contentView bringSubviewToFront:_selectPhotoButton];
     [self.contentView bringSubviewToFront:_selectImageView];
     [self.contentView bringSubviewToFront:_indexLabel];
-        
-    [self.contentView bringSubviewToFront:_modalView];
-
+    
     if (self.assetCellDidLayoutSubviewsBlock) {
         self.assetCellDidLayoutSubviewsBlock(self, _imageView, _selectImageView, _indexLabel, _bottomView, _timeLength, _videoImgView);
     }
@@ -428,12 +426,17 @@
 - (void)setModel:(TZAlbumModel *)model {
     _model = model;
     
-    NSMutableAttributedString *nameString = [[NSMutableAttributedString alloc] initWithString:model.name attributes:@{NSFontAttributeName:[UIFont systemFontOfSize:16],NSForegroundColorAttributeName:[UIColor blackColor]}];
+    UIColor *nameColor = UIColor.blackColor;
+    if (@available(iOS 13.0, *)) {
+        nameColor = UIColor.labelColor;
+    }
+    NSMutableAttributedString *nameString = [[NSMutableAttributedString alloc] initWithString:model.name attributes:@{NSFontAttributeName:[UIFont systemFontOfSize:16],NSForegroundColorAttributeName:nameColor}];
     NSAttributedString *countString = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"  (%zd)",model.count] attributes:@{NSFontAttributeName:[UIFont systemFontOfSize:16],NSForegroundColorAttributeName:[UIColor lightGrayColor]}];
     [nameString appendAttributedString:countString];
     self.titleLabel.attributedText = nameString;
     [[TZImageManager manager] getPostImageWithAlbumModel:model completion:^(UIImage *postImage) {
         self.posterImageView.image = postImage;
+        [self setNeedsLayout];
     }];
     if (model.selectedCount) {
         self.selectedCountButton.hidden = NO;
@@ -453,6 +456,7 @@
     NSInteger titleHeight = ceil(self.titleLabel.font.lineHeight);
     self.titleLabel.frame = CGRectMake(80, (self.tz_height - titleHeight) / 2, self.tz_width - 80 - 50, titleHeight);
     self.posterImageView.frame = CGRectMake(0, 0, 70, 70);
+    
     if (self.albumCellDidLayoutSubviewsBlock) {
         self.albumCellDidLayoutSubviewsBlock(self, _posterImageView, _titleLabel);
     }
@@ -479,7 +483,11 @@
     if (_titleLabel == nil) {
         UILabel *titleLabel = [[UILabel alloc] init];
         titleLabel.font = [UIFont boldSystemFontOfSize:17];
-        titleLabel.textColor = [UIColor blackColor];
+        if (@available(iOS 13.0, *)) {
+            titleLabel.textColor = UIColor.labelColor;
+        } else {
+            titleLabel.textColor = [UIColor blackColor];
+        }
         titleLabel.textAlignment = NSTextAlignmentLeft;
         [self.contentView addSubview:titleLabel];
         _titleLabel = titleLabel;

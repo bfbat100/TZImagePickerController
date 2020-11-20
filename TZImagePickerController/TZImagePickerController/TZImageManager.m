@@ -9,10 +9,8 @@
 #import "TZImageManager.h"
 #import "TZAssetModel.h"
 #import "TZImagePickerController.h"
-#import <CoreServices/CoreServices.h>
+#import <MobileCoreServices/MobileCoreServices.h>
 #import <SVProgressHUD/SVProgressHUD.h>
-
-//#import "VideoCompress.h"
 
 @interface TZImageManager ()
 #pragma clang diagnostic push
@@ -78,7 +76,7 @@ static dispatch_once_t onceToken;
     NSInteger kbps = videoTrack.estimatedDataRate / 1024;
     //压缩前原视频帧率
     NSInteger frameRate = [videoTrack nominalFrameRate];
-    NSLog(@"\noriginalVideo\nfileSize = %.2f MB,\n videoWidth = %ld,\n videoHeight = %ld,\n video bitRate = %ld\n, video frameRate = %ld", fileSizeMB, videoWidth, videoHeight, kbps, frameRate);
+//    NSLog(@"\noriginalVideo\nfileSize = %.2f MB,\n videoWidth = %ld,\n videoHeight = %ld,\n video bitRate = %ld\n, video frameRate = %ld", fileSizeMB, videoWidth, videoHeight, kbps, frameRate);
     NSMutableDictionary *dic = [NSMutableDictionary dictionaryWithDictionary:@{@"urlStr" : videoUrl.path}];
     //原视频比特率小于指定比特率 不压缩 返回原视频
     if (kbps <= (compressBiteRate / 1024)) {
@@ -92,7 +90,7 @@ static dispatch_once_t onceToken;
     NSString *timeSp = [NSString stringWithFormat:@"%ld", (long)([datenow timeIntervalSince1970]*1000)];
   
     NSString *outputUrlStr = [[cachesDir stringByAppendingPathComponent:timeSp] stringByAppendingPathExtension:@"mp4"];
-    NSLog(@"===压缩视频存放的指定路径%@===", outputUrlStr);
+//    NSLog(@"===压缩视频存放的指定路径%@===", outputUrlStr);
     //如果指定路径下已存在其他文件 先移除指定文件
     if ([[NSFileManager defaultManager] fileExistsAtPath:outputUrlStr]) {
         BOOL removeSuccess =  [[NSFileManager defaultManager] removeItemAtPath:outputUrlStr error:nil];
@@ -150,11 +148,11 @@ static dispatch_once_t onceToken;
     AVAssetWriterInput *audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio outputSettings:[self audioCompressSettings]];
     if ([writer canAddInput:videoInput]) {
         [writer addInput:videoInput];
-        NSLog(@"videoInput==========videoInput");
+//        NSLog(@"videoInput==========videoInput");
     }
     if ([writer canAddInput:audioInput]) {
         [writer addInput:audioInput];
-        NSLog(@"audioInput==========audioInput");
+//        NSLog(@"audioInput==========audioInput");
     }
     [reader startReading];
     [writer startWriting];
@@ -174,7 +172,7 @@ static dispatch_once_t onceToken;
             CMSampleBufferRef sampleBuffer = [videoOutput copyNextSampleBuffer];
             if (sampleBuffer != NULL) {
                 [videoInput appendSampleBuffer:sampleBuffer];
-                NSLog(@"===%@===", sampleBuffer);
+//                NSLog(@"===%@===", sampleBuffer);
                 CFRelease(sampleBuffer);
             } else {
                 completedOrFailed = YES;
@@ -191,7 +189,7 @@ static dispatch_once_t onceToken;
             CMSampleBufferRef sampleBuffer = [audioOutput copyNextSampleBuffer];
             if (sampleBuffer != NULL) {
                 BOOL success = [audioInput appendSampleBuffer:sampleBuffer];
-                NSLog(@"===%@===", sampleBuffer);
+//                NSLog(@"===%@===", sampleBuffer);
                 CFRelease(sampleBuffer);
                 completedOrFailed = !success;
             } else {
@@ -223,7 +221,7 @@ static dispatch_once_t onceToken;
                 break;
             case AVAssetWriterStatusFailed:
                 NSLog(@"===error：%@===", writer.error);
-//                [SVProgressHUD showErrorWithStatus:[NSString stringWithFormat:@"%@",writer.error]]; 
+//                [SVProgressHUD showErrorWithStatus:[NSString stringWithFormat:@"%@",writer.error]];
                 break;
             case AVAssetWriterStatusCompleted:
             {
@@ -358,7 +356,6 @@ static dispatch_once_t onceToken;
     onceToken = 0;
     manager = nil;
 }
-
 + (void)judgeAssetBigger:(TZAssetModel*)model isNeedSizeControl:(BOOL)isNeedSizeControl result:(nonnull void (^)(BOOL isFail,NSString *errorMsg))result{
     
     static BOOL tmpResult = false;
@@ -429,10 +426,6 @@ static dispatch_once_t onceToken;
     AssetGridThumbnailSize = CGSizeMake(itemWH * TZScreenScale, itemWH * TZScreenScale);
 }
 
-- (void)setVideoMaxDuration:(float)videoMaxDuration {
-    _videoMaxDuration = videoMaxDuration;
-}
-
 - (void)configTZScreenWidth {
     TZScreenWidth = [UIScreen mainScreen].bounds.size.width;
     // 测试发现，如果scale在plus真机上取到3.0，内存会增大特别多。故这里写死成2.0
@@ -476,12 +469,20 @@ static dispatch_once_t onceToken;
 
 #pragma mark - Get Album
 
-/// Get Album 获得相册/相册数组
 - (void)getCameraRollAlbum:(BOOL)allowPickingVideo allowPickingImage:(BOOL)allowPickingImage needFetchAssets:(BOOL)needFetchAssets completion:(void (^)(TZAlbumModel *model))completion {
+    TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
+    config.allowPickingVideo = allowPickingVideo;
+    config.allowPickingImage = allowPickingImage;
+    [self getCameraRollAlbumWithFetchAssets:needFetchAssets completion:completion];
+}
+
+/// Get Album 获得相册/相册数组
+- (void)getCameraRollAlbumWithFetchAssets:(BOOL)needFetchAssets completion:(void (^)(TZAlbumModel *model))completion {
     __block TZAlbumModel *model;
+    TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
     PHFetchOptions *option = [[PHFetchOptions alloc] init];
-    if (!allowPickingVideo) option.predicate = [NSPredicate predicateWithFormat:@"mediaType == %ld", PHAssetMediaTypeImage];
-    if (!allowPickingImage) option.predicate = [NSPredicate predicateWithFormat:@"mediaType == %ld",
+    if (!config.allowPickingVideo) option.predicate = [NSPredicate predicateWithFormat:@"mediaType == %ld", PHAssetMediaTypeImage];
+    if (!config.allowPickingImage) option.predicate = [NSPredicate predicateWithFormat:@"mediaType == %ld",
                                                 PHAssetMediaTypeVideo];
     // option.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"modificationDate" ascending:self.sortAscendingByModificationDate]];
     if (!self.sortAscendingByModificationDate) {
@@ -495,18 +496,26 @@ static dispatch_once_t onceToken;
         if (collection.estimatedAssetCount <= 0) continue;
         if ([self isCameraRollAlbum:collection]) {
             PHFetchResult *fetchResult = [PHAsset fetchAssetsInAssetCollection:collection options:option];
-            model = [self modelWithResult:fetchResult name:collection.localizedTitle isCameraRoll:YES needFetchAssets:needFetchAssets];
+            model = [self modelWithResult:fetchResult collection:collection isCameraRoll:YES needFetchAssets:needFetchAssets options:option];
             if (completion) completion(model);
             break;
         }
     }
 }
 
-- (void)getAllAlbums:(BOOL)allowPickingVideo allowPickingImage:(BOOL)allowPickingImage needFetchAssets:(BOOL)needFetchAssets completion:(void (^)(NSArray<TZAlbumModel *> *))completion{
+- (void)getAllAlbums:(BOOL)allowPickingVideo allowPickingImage:(BOOL)allowPickingImage needFetchAssets:(BOOL)needFetchAssets completion:(void (^)(NSArray<TZAlbumModel *> *))completion {
+    TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
+    config.allowPickingVideo = allowPickingVideo;
+    config.allowPickingImage = allowPickingImage;
+    [self getAllAlbumsWithFetchAssets:needFetchAssets completion:completion];
+}
+
+- (void)getAllAlbumsWithFetchAssets:(BOOL)needFetchAssets completion:(void (^)(NSArray<TZAlbumModel *> *))completion {
+    TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
     NSMutableArray *albumArr = [NSMutableArray array];
     PHFetchOptions *option = [[PHFetchOptions alloc] init];
-    if (!allowPickingVideo) option.predicate = [NSPredicate predicateWithFormat:@"mediaType == %ld", PHAssetMediaTypeImage];
-    if (!allowPickingImage) option.predicate = [NSPredicate predicateWithFormat:@"mediaType == %ld",
+    if (!config.allowPickingVideo) option.predicate = [NSPredicate predicateWithFormat:@"mediaType == %ld", PHAssetMediaTypeImage];
+    if (!config.allowPickingImage) option.predicate = [NSPredicate predicateWithFormat:@"mediaType == %ld",
                                                 PHAssetMediaTypeVideo];
     // option.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"modificationDate" ascending:self.sortAscendingByModificationDate]];
     if (!self.sortAscendingByModificationDate) {
@@ -537,9 +546,9 @@ static dispatch_once_t onceToken;
             if (collection.assetCollectionSubtype == PHAssetCollectionSubtypeSmartAlbumAllHidden) continue;
             if (collection.assetCollectionSubtype == 1000000201) continue; //『最近删除』相册
             if ([self isCameraRollAlbum:collection]) {
-                [albumArr insertObject:[self modelWithResult:fetchResult name:collection.localizedTitle isCameraRoll:YES needFetchAssets:needFetchAssets] atIndex:0];
+                [albumArr insertObject:[self modelWithResult:fetchResult collection:collection isCameraRoll:YES needFetchAssets:needFetchAssets options:option] atIndex:0];
             } else {
-                [albumArr addObject:[self modelWithResult:fetchResult name:collection.localizedTitle isCameraRoll:NO needFetchAssets:needFetchAssets]];
+                [albumArr addObject:[self modelWithResult:fetchResult collection:collection isCameraRoll:NO needFetchAssets:needFetchAssets options:option]];
             }
         }
     }
@@ -551,15 +560,18 @@ static dispatch_once_t onceToken;
 #pragma mark - Get Assets
 
 /// Get Assets 获得照片数组
-- (void)getAssetsFromFetchResult:(PHFetchResult *)result completion:(void (^)(NSArray<TZAssetModel *> *))completion {
+- (void)getAssetsFromFetchResult:(PHFetchResult *)result allowPickingVideo:(BOOL)allowPickingVideo allowPickingImage:(BOOL)allowPickingImage completion:(void (^)(NSArray<TZAssetModel *> *))completion {
     TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
-    return [self getAssetsFromFetchResult:result allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage completion:completion];
+    config.allowPickingVideo = allowPickingVideo;
+    config.allowPickingImage = allowPickingImage;
+    return [self getAssetsFromFetchResult:result completion:completion];
 }
 
-- (void)getAssetsFromFetchResult:(PHFetchResult *)result allowPickingVideo:(BOOL)allowPickingVideo allowPickingImage:(BOOL)allowPickingImage completion:(void (^)(NSArray<TZAssetModel *> *))completion {
+- (void)getAssetsFromFetchResult:(PHFetchResult *)result completion:(void (^)(NSArray<TZAssetModel *> *))completion {
+    TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
     NSMutableArray *photoArr = [NSMutableArray array];
     [result enumerateObjectsUsingBlock:^(PHAsset *asset, NSUInteger idx, BOOL * _Nonnull stop) {
-        TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:allowPickingVideo allowPickingImage:allowPickingImage];
+        TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage];
         if (model) {
             [photoArr addObject:model];
         }
@@ -570,6 +582,13 @@ static dispatch_once_t onceToken;
 ///  Get asset at index 获得下标为index的单个照片
 ///  if index beyond bounds, return nil in callback 如果索引越界, 在回调中返回 nil
 - (void)getAssetFromFetchResult:(PHFetchResult *)result atIndex:(NSInteger)index allowPickingVideo:(BOOL)allowPickingVideo allowPickingImage:(BOOL)allowPickingImage completion:(void (^)(TZAssetModel *))completion {
+    TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
+    config.allowPickingVideo = allowPickingVideo;
+    config.allowPickingImage = allowPickingImage;
+    [self getAssetFromFetchResult:result atIndex:index allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage completion:completion];
+}
+
+- (void)getAssetFromFetchResult:(PHFetchResult *)result atIndex:(NSInteger)index completion:(void (^)(TZAssetModel *))completion {
     PHAsset *asset;
     @try {
         asset = result[index];
@@ -578,7 +597,8 @@ static dispatch_once_t onceToken;
         if (completion) completion(nil);
         return;
     }
-    TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:allowPickingVideo allowPickingImage:allowPickingImage];
+    TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
+    TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage];
     if (completion) completion(model);
 }
 
@@ -742,17 +762,13 @@ static dispatch_once_t onceToken;
         imageSize = CGSizeMake(pixelWidth, pixelHeight);
     }
     
-    __block UIImage *image;
     // 修复获取图片时出现的瞬间内存过高问题
     // 下面两行代码，来自hsjcom，他的github是：https://github.com/hsjcom 表示感谢
     PHImageRequestOptions *option = [[PHImageRequestOptions alloc] init];
     option.resizeMode = PHImageRequestOptionsResizeModeFast;
     int32_t imageRequestID = [[PHImageManager defaultManager] requestImageForAsset:asset targetSize:imageSize contentMode:PHImageContentModeAspectFill options:option resultHandler:^(UIImage *result, NSDictionary *info) {
-        if (result) {
-            image = result;
-        }
-        BOOL downloadFinined = (![[info objectForKey:PHImageCancelledKey] boolValue] && ![info objectForKey:PHImageErrorKey]);
-        if (downloadFinined && result) {
+        BOOL cancelled = [[info objectForKey:PHImageCancelledKey] boolValue];
+        if (!cancelled && result) {
             result = [self fixOrientation:result];
             if (completion) completion(result,info,[[info objectForKey:PHImageResultIsDegradedKey] boolValue]);
         }
@@ -773,8 +789,8 @@ static dispatch_once_t onceToken;
                 if (![TZImagePickerConfig sharedInstance].notScaleImage) {
                     resultImage = [self scaleImage:resultImage toSize:imageSize];
                 }
-                if (!resultImage) {
-                    resultImage = image;
+                if (!resultImage && result) {
+                    resultImage = result;
                 }
                 resultImage = [self fixOrientation:resultImage];
                 if (completion) completion(resultImage,info,NO);
@@ -819,8 +835,8 @@ static dispatch_once_t onceToken;
     }
     option.resizeMode = PHImageRequestOptionsResizeModeFast;
     return [[PHImageManager defaultManager] requestImageForAsset:asset targetSize:PHImageManagerMaximumSize contentMode:PHImageContentModeAspectFit options:option resultHandler:^(UIImage *result, NSDictionary *info) {
-        BOOL downloadFinined = (![[info objectForKey:PHImageCancelledKey] boolValue] && ![info objectForKey:PHImageErrorKey]);
-        if (downloadFinined && result) {
+        BOOL cancelled = [[info objectForKey:PHImageCancelledKey] boolValue];
+        if (!cancelled && result) {
             result = [self fixOrientation:result];
             BOOL isDegraded = [[info objectForKey:PHImageResultIsDegradedKey] boolValue];
             if (completion) completion(result,info,isDegraded);
@@ -842,8 +858,8 @@ static dispatch_once_t onceToken;
     [option setProgressHandler:progressHandler];
     option.deliveryMode = PHImageRequestOptionsDeliveryModeHighQualityFormat;
     return [[PHImageManager defaultManager] requestImageDataForAsset:asset options:option resultHandler:^(NSData *imageData, NSString *dataUTI, UIImageOrientation orientation, NSDictionary *info) {
-        BOOL downloadFinined = (![[info objectForKey:PHImageCancelledKey] boolValue] && ![info objectForKey:PHImageErrorKey]);
-        if (downloadFinined && imageData) {
+        BOOL cancelled = [[info objectForKey:PHImageCancelledKey] boolValue];
+        if (!cancelled && imageData) {
             if (completion) completion(imageData,info,NO);
         }
     }];
@@ -867,10 +883,9 @@ static dispatch_once_t onceToken;
     } completionHandler:^(BOOL success, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (success && completion) {
-                PHAsset *asset = [[PHAsset fetchAssetsWithLocalIdentifiers:@[localIdentifier] options:nil] firstObject];
-                completion(asset, nil);
+                [self fetchAssetByIocalIdentifier:localIdentifier retryCount:10 completion:completion];
             } else if (error) {
-                NSLog(@"保存照片出错:%@",error.localizedDescription);
+//                NSLog(@"保存照片出错:%@",error.localizedDescription);
                 if (completion) {
                     completion(nil, error);
                 }
@@ -904,16 +919,28 @@ static dispatch_once_t onceToken;
         [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
         dispatch_async(dispatch_get_main_queue(), ^{
             if (success && completion) {
-                PHAsset *asset = [[PHAsset fetchAssetsWithLocalIdentifiers:@[localIdentifier] options:nil] firstObject];
-                completion(asset, nil);
+                [self fetchAssetByIocalIdentifier:localIdentifier retryCount:10 completion:completion];
             } else if (error) {
-                NSLog(@"保存照片出错:%@",error.localizedDescription);
+//                NSLog(@"保存照片出错:%@",error.localizedDescription);
                 if (completion) {
                     completion(nil, error);
                 }
             }
         });
     }];
+}
+
+- (void)fetchAssetByIocalIdentifier:(NSString *)localIdentifier retryCount:(NSInteger)retryCount completion:(void (^)(PHAsset *asset, NSError *error))completion {
+    PHAsset *asset = [[PHAsset fetchAssetsWithLocalIdentifiers:@[localIdentifier] options:nil] firstObject];
+    if (asset || retryCount <= 0) {
+        if (completion) {
+            completion(asset, nil);
+        }
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self fetchAssetByIocalIdentifier:localIdentifier retryCount:retryCount - 1 completion:completion];
+    });
 }
 
 #pragma mark - Save video
@@ -934,10 +961,9 @@ static dispatch_once_t onceToken;
     } completionHandler:^(BOOL success, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (success && completion) {
-                PHAsset *asset = [[PHAsset fetchAssetsWithLocalIdentifiers:@[localIdentifier] options:nil] firstObject];
-                completion(asset, nil);
+                [self fetchAssetByIocalIdentifier:localIdentifier retryCount:10 completion:completion];
             } else if (error) {
-                NSLog(@"保存视频出错:%@",error.localizedDescription);
+//                NSLog(@"保存视频出错:%@",error.localizedDescription);
                 if (completion) {
                     completion(nil, error);
                 }
@@ -977,7 +1003,6 @@ static dispatch_once_t onceToken;
 
 - (void)getVideoOutputPathWithAsset:(PHAsset *)asset presetName:(NSString *)presetName success:(void (^)(NSString *outputPath))success failure:(void (^)(NSString *errorMessage, NSError *error))failure {
     PHVideoRequestOptions* options = [[PHVideoRequestOptions alloc] init];
-    options.version = PHVideoRequestOptionsVersionOriginal;
     options.deliveryMode = PHVideoRequestOptionsDeliveryModeAutomatic;
     options.networkAccessAllowed = YES;
     [[PHImageManager defaultManager] requestAVAssetForVideo:asset options:options resultHandler:^(AVAsset* avasset, AVAudioMix* audioMix, NSDictionary* info){
@@ -1018,7 +1043,7 @@ static dispatch_once_t onceToken;
             if (failure) {
                 failure(@"该视频类型暂不支持导出", nil);
             }
-            NSLog(@"No supported file types 视频类型暂不支持导出");
+//            NSLog(@"No supported file types 视频类型暂不支持导出");
             return;
         } else {
             session.outputFileType = [supportedTypeArray objectAtIndex:0];
@@ -1046,7 +1071,7 @@ static dispatch_once_t onceToken;
         }
 
             [self compressVideoWithVideoUrl:videoAsset.URL withBiteRate:@(2000 * 1024) withFrameRate:@(20) withVideoWidth:@(1080) withVideoHeight:@(1920)  compressComplete:^(id responseObjc) {
-                NSLog(@"压缩成功%@",responseObjc);
+//                NSLog(@"压缩成功%@",responseObjc);
                  if (success) {
 //                     if (self.hideHud) { // 此处不必控制隐藏
 //                         self.hideHud();
@@ -1127,10 +1152,12 @@ static dispatch_once_t onceToken;
 
 #pragma mark - Private Method
 
-- (TZAlbumModel *)modelWithResult:(PHFetchResult *)result name:(NSString *)name isCameraRoll:(BOOL)isCameraRoll needFetchAssets:(BOOL)needFetchAssets {
+- (TZAlbumModel *)modelWithResult:(PHFetchResult *)result collection:(PHAssetCollection *)collection isCameraRoll:(BOOL)isCameraRoll needFetchAssets:(BOOL)needFetchAssets options:(PHFetchOptions *)options {
     TZAlbumModel *model = [[TZAlbumModel alloc] init];
     [model setResult:result needFetchAssets:needFetchAssets];
-    model.name = name;
+    model.name = collection.localizedTitle;
+    model.collection = collection;
+    model.options = options;
     model.isCameraRoll = isCameraRoll;
     model.count = result.count;
     return model;
