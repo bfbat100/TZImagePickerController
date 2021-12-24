@@ -7,6 +7,7 @@
 //
 
 #import <UIKit/UIKit.h>
+#import "TZAssetModel.h"
 
 @interface TZPhotoPreviewController : UIViewController
 
@@ -21,5 +22,6 @@
 @property (nonatomic, copy) void (^doneButtonClickBlock)(BOOL isSelectOriginalPhoto);
 @property (nonatomic, copy) void (^doneButtonClickBlockCropMode)(UIImage *cropedImage,id asset);
 @property (nonatomic, copy) void (^doneButtonClickBlockWithPreviewType)(NSArray<UIImage *> *photos,NSArray *assets,BOOL isSelectOriginalPhoto);
-
+//
+@property (nonatomic, copy) void (^ _Nullable callBackAsset)(TZAssetModel * _Nullable assetModel);
 @end
